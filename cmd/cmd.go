@@ -36,15 +36,17 @@ import (
 	"github.com/bnulwh/ollama/envconfig"
 	"github.com/bnulwh/ollama/format"
 	"github.com/bnulwh/ollama/parser"
-	"github.com/bnulwh/ollama/progress"
+	"github.com/bnulwh/ollama/progress" // 进度反馈：使用progress包实现进度条和微调器，提升用户体验。
 	"github.com/bnulwh/ollama/runner"
 	"github.com/bnulwh/ollama/server"
 	"github.com/bnulwh/ollama/types/model"
 	"github.com/bnulwh/ollama/version"
 )
 
+// 定义找不到 Modelfile 的自定义错误。
 var errModelfileNotFound = errors.New("specified Modelfile wasn't found")
 
+// 解析用户指定的 --file 参数或默认使用当前目录的 Modelfile，返回绝对路径并验证文件存在。
 func getModelfileName(cmd *cobra.Command) (string, error) {
 	filename, _ := cmd.Flags().GetString("file")
 
@@ -65,14 +67,23 @@ func getModelfileName(cmd *cobra.Command) (string, error) {
 	return absName, nil
 }
 
+// 创建模型（CreateHandler）：通过解析Modelfile构建模型，支持量化（--quantize），并上传相关文件到服务器。
+// 流程：
+//
+//	1.初始化进度条。
+//	2.解析 Modelfile 并构建请求。
+//	3.处理文件上传（通过 createBlob）。
+//	4.调用 API 创建模型，并更新进度
 func CreateHandler(cmd *cobra.Command, args []string) error {
+	// 初始化进度条
 	p := progress.NewProgress(os.Stderr)
 	defer p.Stop()
 
 	var reader io.Reader
-
+	// 解析 Modelfile
 	filename, err := getModelfileName(cmd)
 	if os.IsNotExist(err) {
+		// 处理文件不存在的情况
 		if filename == "" {
 			reader = strings.NewReader("FROM .\n")
 		} else {
@@ -89,7 +100,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 		reader = f
 		defer f.Close()
 	}
-
+	// 解析 Modelfile 内容
 	modelfile, err := parser.ParseFile(reader)
 	if err != nil {
 		return err
@@ -98,24 +109,25 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 	status := "gathering model components"
 	spinner := progress.NewSpinner(status)
 	p.Add(status, spinner)
-
+	// 构建创建请求
 	req, err := modelfile.CreateRequest(filepath.Dir(filename))
 	if err != nil {
 		return err
 	}
 	spinner.Stop()
 
-	req.Name = args[0]
+	req.Name = args[0] // 模型名称
+	// 处理量化参数
 	quantize, _ := cmd.Flags().GetString("quantize")
 	if quantize != "" {
 		req.Quantize = quantize
 	}
-
+	// 调用 API 创建模型
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		return err
 	}
-
+	// 处理文件上传（通过 createBlob）
 	if len(req.Files) > 0 {
 		fileMap := map[string]string{}
 		for f, digest := range req.Files {
@@ -161,6 +173,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := client.Create(cmd.Context(), req, fn); err != nil {
+		// 错误处理
 		if strings.Contains(err.Error(), "path or Modelfile are required") {
 			return fmt.Errorf("the ollama server must be updated to use `ollama create` with this client")
 		}
@@ -170,6 +183,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 处理文件上传（通过 createBlob）
 func createBlob(cmd *cobra.Command, client *api.Client, path string, digest string, p *progress.Progress) (string, error) {
 	realPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -218,6 +232,7 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, digest stri
 	return digest, nil
 }
 
+// 实现 io.Writer 接口，用于跟踪文件上传进度（通过原子计数器）
 type progressWriter struct {
 	n atomic.Int64
 }
@@ -227,6 +242,7 @@ func (w *progressWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// 模型加载/卸载
 func loadOrUnloadModel(cmd *cobra.Command, opts *runOptions) error {
 	p := progress.NewProgress(os.Stderr)
 	defer p.StopAndClear()
@@ -247,11 +263,13 @@ func loadOrUnloadModel(cmd *cobra.Command, opts *runOptions) error {
 	return client.Generate(cmd.Context(), req, func(api.GenerateResponse) error { return nil })
 }
 
+// 停止模型（StopHandler）：卸载正在运行的模型。通过设置 KeepAlive 为 0 触发模型卸载。
 func StopHandler(cmd *cobra.Command, args []string) error {
 	opts := &runOptions{
 		Model:     args[0],
 		KeepAlive: &api.Duration{Duration: 0},
 	}
+	// 模型卸载
 	if err := loadOrUnloadModel(cmd, opts); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return fmt.Errorf("couldn't find model \"%s\" to stop", args[0])
@@ -261,6 +279,8 @@ func StopHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 运行模型（RunHandler）：启动模型推理，支持交互式输入、多模态处理、格式控制（如JSON）和超时设置（--keepalive）
+// 处理用户输入，加载模型元数据，调用生成逻辑。
 func RunHandler(cmd *cobra.Command, args []string) error {
 	interactive := true
 
@@ -289,6 +309,7 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 
 	prompts := args[1:]
+	// 处理输入（包括 stdin）
 	// prepend stdin to the prompt if provided
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		in, err := io.ReadAll(os.Stdin)
@@ -315,6 +336,7 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 	opts.WordWrap = !nowrap
 
+	// 加载模型元数据
 	// Fill out the rest of the options based on information about the
 	// model.
 	client, err := api.ClientFromEnvironment()
@@ -325,6 +347,7 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	info, err := func() (*api.ShowResponse, error) {
 		showReq := &api.ShowRequest{Name: name}
+		// 加载模型元数据
 		info, err := client.Show(cmd.Context(), showReq)
 		var se api.StatusError
 		if errors.As(err, &se) && se.StatusCode == http.StatusNotFound {
@@ -338,7 +361,7 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
+	// 判断多模态支持
 	if len(info.ProjectorInfo) != 0 {
 		opts.MultiModal = true
 	}
@@ -370,9 +393,11 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 
 		return generateInteractive(cmd, opts)
 	}
+	// 调用生成函数
 	return generate(cmd, opts)
 }
 
+// 推送模型（PushHandler）：从/向注册表上传模型，支持不安全连接（--insecure）
 func PushHandler(cmd *cobra.Command, args []string) error {
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -444,6 +469,7 @@ func PushHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 列出模型（ListHandler）：显示本地的模型信息，包括ID、大小、处理器占用等。
 func ListHandler(cmd *cobra.Command, args []string) error {
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -477,6 +503,7 @@ func ListHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 列出模型（ListRunningHandler）：显示正在运行的模型信息，包括ID、大小、处理器占用等。
 func ListRunningHandler(cmd *cobra.Command, args []string) error {
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -531,6 +558,7 @@ func ListRunningHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 删除模型（DeleteHandler）：删除本地模型并尝试先停止运行实例。
 func DeleteHandler(cmd *cobra.Command, args []string) error {
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -558,6 +586,7 @@ func DeleteHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 查看模型详情（ShowHandler）：显示模型的元数据、许可证、参数、模板等，支持--verbose输出详细信息
 func ShowHandler(cmd *cobra.Command, args []string) error {
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -756,6 +785,7 @@ func showInfo(resp *api.ShowResponse, verbose bool, w io.Writer) error {
 	return nil
 }
 
+// 复制模型（CopyHandler）：复制模型到新名称。
 func CopyHandler(cmd *cobra.Command, args []string) error {
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -770,6 +800,7 @@ func CopyHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// 拉取模型（PullHandler）：从/向注册表下载模型，支持不安全连接（--insecure）
 func PullHandler(cmd *cobra.Command, args []string) error {
 	insecure, err := cmd.Flags().GetBool("insecure")
 	if err != nil {
@@ -1070,16 +1101,23 @@ func generate(cmd *cobra.Command, opts runOptions) error {
 	return nil
 }
 
+// 启动服务器（RunServer）：监听指定端口（通过环境变量OLLAMA_HOST配置），提供API服务。启动 HTTP 服务
+// 流程：
+//
+//	1.生成或加载 ED25519 密钥对。
+//	2.监听配置的端口（如 OLLAMA_HOST）。
+//	3.启动 HTTP 服务。
 func RunServer(_ *cobra.Command, _ []string) error {
+	// 1.生成或加载 ED25519 密钥对。
 	if err := initializeKeypair(); err != nil {
 		return err
 	}
-
+	// 2.监听配置的端口（如 OLLAMA_HOST）。
 	ln, err := net.Listen("tcp", envconfig.Host().Host)
 	if err != nil {
 		return err
 	}
-
+	// 3.启动 HTTP 服务。
 	err = server.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -1088,6 +1126,7 @@ func RunServer(_ *cobra.Command, _ []string) error {
 	return err
 }
 
+// 生成密钥对（initializeKeypair）：首次运行时生成ED25519密钥对，用于安全通信,确保本地存在 SSH 密钥对，用于安全通信。
 func initializeKeypair() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -1096,7 +1135,7 @@ func initializeKeypair() error {
 
 	privKeyPath := filepath.Join(home, ".ollama", "id_ed25519")
 	pubKeyPath := filepath.Join(home, ".ollama", "id_ed25519.pub")
-
+	// 检查密钥是否存在，否则生成新密钥
 	_, err = os.Stat(privKeyPath)
 	if os.IsNotExist(err) {
 		fmt.Printf("Couldn't find '%s'. Generating new private key.\n", privKeyPath)
@@ -1104,7 +1143,7 @@ func initializeKeypair() error {
 		if err != nil {
 			return err
 		}
-
+		// 保存私钥和公钥
 		privateKeyBytes, err := ssh.MarshalPrivateKey(cryptoPrivateKey, "")
 		if err != nil {
 			return err

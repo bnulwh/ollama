@@ -29,6 +29,7 @@ const (
 	MultilineSystem
 )
 
+// 交互式对话（generateInteractive）：支持多轮对话和上下文保持。
 func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 	usage := func() {
 		fmt.Fprintln(os.Stderr, "Available Commands:")
@@ -516,6 +517,7 @@ func extractFileNames(input string) []string {
 	return re.FindAllString(input, -1)
 }
 
+// 多模态支持：通过extractFileData解析包含文件路径的提示词，处理图像等非文本输入。
 func extractFileData(input string) (string, []api.ImageData, error) {
 	filePaths := extractFileNames(input)
 	var imgs []api.ImageData
@@ -536,6 +538,7 @@ func extractFileData(input string) (string, []api.ImageData, error) {
 	return strings.TrimSpace(input), imgs, nil
 }
 
+// 处理图像文件内容
 func getImageData(filePath string) ([]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
