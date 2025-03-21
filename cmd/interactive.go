@@ -21,6 +21,11 @@ import (
 	"github.com/bnulwh/ollama/types/model"
 )
 
+// 作用：标识多行输入的状态：
+//
+//	MultilineNone：无多行输入。
+//	MultilinePrompt：用户输入多行提示。
+//	MultilineSystem：设置多行系统消息。
 type MultilineState int
 
 const (
@@ -30,7 +35,9 @@ const (
 )
 
 // 交互式对话（generateInteractive）：支持多轮对话和上下文保持。
+// 处理交互式会话，支持多轮对话、上下文管理、参数设置和多模态输入。
 func generateInteractive(cmd *cobra.Command, opts runOptions) error {
+	// 显示通用帮助信息
 	usage := func() {
 		fmt.Fprintln(os.Stderr, "Available Commands:")
 		fmt.Fprintln(os.Stderr, "  /set            Set session variables")
@@ -50,7 +57,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 
 		fmt.Fprintln(os.Stderr, "")
 	}
-
+	// 显示 `/set` 子命令帮助
 	usageSet := func() {
 		fmt.Fprintln(os.Stderr, "Available Commands:")
 		fmt.Fprintln(os.Stderr, "  /set parameter ...     Set a parameter")
@@ -65,7 +72,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 		fmt.Fprintln(os.Stderr, "  /set quiet             Disable LLM stats")
 		fmt.Fprintln(os.Stderr, "")
 	}
-
+	// 显示键盘快捷键
 	usageShortcuts := func() {
 		fmt.Fprintln(os.Stderr, "Available keyboard shortcuts:")
 		fmt.Fprintln(os.Stderr, "  Ctrl + a            Move to the beginning of the line (Home)")
@@ -81,7 +88,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 		fmt.Fprintln(os.Stderr, "  Ctrl + d            Exit ollama (/bye)")
 		fmt.Fprintln(os.Stderr, "")
 	}
-
+	// 显示 `/show` 子命令帮助
 	usageShow := func() {
 		fmt.Fprintln(os.Stderr, "Available Commands:")
 		fmt.Fprintln(os.Stderr, "  /show info         Show details for this model")
@@ -92,7 +99,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 		fmt.Fprintln(os.Stderr, "  /show template     Show prompt template")
 		fmt.Fprintln(os.Stderr, "")
 	}
-
+	// 显示可设置的模型参数
 	// only list out the most common parameters
 	usageParameters := func() {
 		fmt.Fprintln(os.Stderr, "Available Parameters:")
@@ -109,7 +116,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 		fmt.Fprintln(os.Stderr, "  /set parameter stop <string> <string> ...   Set the stop parameters")
 		fmt.Fprintln(os.Stderr, "")
 	}
-
+	// 创建交互式输入扫描器
 	scanner, err := readline.New(readline.Prompt{
 		Prompt:         ">>> ",
 		AltPrompt:      "... ",
@@ -119,11 +126,11 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return err
 	}
-
+	// 禁用历史记录（根据环境变量）
 	if envconfig.NoHistory() {
 		scanner.HistoryDisable()
 	}
-
+	// 使用 readline 库实现带提示符的输入（如 >>> 和 ...）。
 	fmt.Print(readline.StartBracketedPaste)
 	defer fmt.Printf(readline.EndBracketedPaste)
 
@@ -131,12 +138,13 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 	var multiline MultilineState
 
 	for {
+		// 读取用户输入
 		line, err := scanner.Readline()
 		switch {
-		case errors.Is(err, io.EOF):
+		case errors.Is(err, io.EOF): // Ctrl+D 退出
 			fmt.Println()
 			return nil
-		case errors.Is(err, readline.ErrInterrupt):
+		case errors.Is(err, readline.ErrInterrupt): // Ctrl+C 中断
 			if line == "" {
 				fmt.Println("\nUse Ctrl + d or /bye to exit.")
 			}
@@ -150,7 +158,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 		}
 
 		switch {
-		case multiline != MultilineNone:
+		case multiline != MultilineNone: // 处理多行输入
 			// check if there's a multiline terminating string
 			before, ok := strings.CutSuffix(line, `"""`)
 			sb.WriteString(before)
@@ -169,7 +177,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 
 			multiline = MultilineNone
 			scanner.Prompt.UseAlt = false
-		case strings.HasPrefix(line, `"""`):
+		case strings.HasPrefix(line, `"""`): // 开始多行输入
 			line := strings.TrimPrefix(line, `"""`)
 			line, ok := strings.CutSuffix(line, `"""`)
 			sb.WriteString(line)
@@ -182,12 +190,12 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 		case scanner.Pasting:
 			fmt.Fprintln(&sb, line)
 			continue
-		case strings.HasPrefix(line, "/list"):
+		case strings.HasPrefix(line, "/list"): // 列出模型
 			args := strings.Fields(line)
 			if err := ListHandler(cmd, args[1:]); err != nil {
 				return err
 			}
-		case strings.HasPrefix(line, "/load"):
+		case strings.HasPrefix(line, "/load"): // 加载模型
 			args := strings.Fields(line)
 			if len(args) != 2 {
 				fmt.Println("Usage:\n  /load <modelname>")
@@ -204,7 +212,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 				return err
 			}
 			continue
-		case strings.HasPrefix(line, "/save"):
+		case strings.HasPrefix(line, "/save"): // 保存会话
 			args := strings.Fields(line)
 			if len(args) != 2 {
 				fmt.Println("Usage:\n  /save <modelname>")
@@ -229,7 +237,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 			}
 			fmt.Printf("Created new model '%s'\n", args[1])
 			continue
-		case strings.HasPrefix(line, "/clear"):
+		case strings.HasPrefix(line, "/clear"): // 清除上下文
 			opts.Messages = []api.Message{}
 			if opts.System != "" {
 				newMessage := api.Message{Role: "system", Content: opts.System}
@@ -237,7 +245,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 			}
 			fmt.Println("Cleared session context")
 			continue
-		case strings.HasPrefix(line, "/set"):
+		case strings.HasPrefix(line, "/set"): // 设置参数
 			args := strings.Fields(line)
 			if len(args) > 1 {
 				switch args[1] {
@@ -328,7 +336,7 @@ func generateInteractive(cmd *cobra.Command, opts runOptions) error {
 			} else {
 				usageSet()
 			}
-		case strings.HasPrefix(line, "/show"):
+		case strings.HasPrefix(line, "/show"): // 显示模型信息
 			args := strings.Fields(line)
 			if len(args) > 1 {
 				client, err := api.ClientFromEnvironment()
@@ -488,6 +496,7 @@ func NewCreateRequest(name string, opts runOptions) *api.CreateRequest {
 	return req
 }
 
+// 将用户输入中的转义字符还原为实际路径。
 func normalizeFilePath(fp string) string {
 	return strings.NewReplacer(
 		"\\ ", " ", // Escaped space
@@ -507,6 +516,12 @@ func normalizeFilePath(fp string) string {
 	).Replace(fp)
 }
 
+// 正则匹配文件路径
+// 正则说明：
+//
+//	匹配包含可选盘符（如 C:\）和相对/绝对路径的文件。
+//	支持转义空格（\ ）和常见符号。
+//	限制扩展名为 .jpg、.jpeg、.png。
 func extractFileNames(input string) []string {
 	// Regex to match file paths starting with optional drive letter, / ./ \ or .\ and include escaped or unescaped spaces (\ or %20)
 	// and followed by more characters and a file extension
@@ -518,12 +533,19 @@ func extractFileNames(input string) []string {
 }
 
 // 多模态支持：通过extractFileData解析包含文件路径的提示词，处理图像等非文本输入。
+// 流程：
+//
+//	1.使用正则表达式提取输入中的文件路径（支持 .jpg、.png）。
+//	2.验证文件类型（JPEG/PNG）和大小（限制 100MB）。
+//	3.将图像数据编码为 api.ImageData，供模型处理。
 func extractFileData(input string) (string, []api.ImageData, error) {
+	// 正则匹配文件路径
 	filePaths := extractFileNames(input)
 	var imgs []api.ImageData
 
 	for _, fp := range filePaths {
 		nfp := normalizeFilePath(fp)
+		// 读取并验证图像文件
 		data, err := getImageData(nfp)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -532,22 +554,24 @@ func extractFileData(input string) (string, []api.ImageData, error) {
 			return "", imgs, err
 		}
 		fmt.Fprintf(os.Stderr, "Added image '%s'\n", nfp)
+		// 从输入中移除文件路径
 		input = strings.ReplaceAll(input, fp, "")
+		// 添加到图像数据列表
 		imgs = append(imgs, data)
 	}
 	return strings.TrimSpace(input), imgs, nil
 }
 
-// 处理图像文件内容
+// 处理图像文件内容,读取图像文件并校验合法性。
 func getImageData(filePath string) ([]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-
+	// 检测文件类型和大小
 	buf := make([]byte, 512)
-	_, err = file.Read(buf)
+	_, err = file.Read(buf) // 读取文件头
 	if err != nil {
 		return nil, err
 	}
@@ -579,6 +603,6 @@ func getImageData(filePath string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	// 读取完整文件内容
 	return buf, nil
 }
