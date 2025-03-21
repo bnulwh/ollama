@@ -20,12 +20,12 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/ollama/ollama/api"
-	"github.com/ollama/ollama/fs/ggml"
-	"github.com/ollama/ollama/openai"
-	"github.com/ollama/ollama/server/internal/client/ollama"
-	"github.com/ollama/ollama/types/model"
-	"github.com/ollama/ollama/version"
+	"github.com/bnulwh/ollama/api"
+	"github.com/bnulwh/ollama/fs/ggml"
+	"github.com/bnulwh/ollama/openai"
+	"github.com/bnulwh/ollama/server/internal/client/ollama"
+	"github.com/bnulwh/ollama/types/model"
+	"github.com/bnulwh/ollama/version"
 )
 
 func createTestFile(t *testing.T, name string) (string, string) {

@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ollama/ollama/types/model"
+	"github.com/bnulwh/ollama/types/model"
 )
 
 type Manifest struct {

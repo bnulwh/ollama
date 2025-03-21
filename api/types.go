@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ollama/ollama/envconfig"
+	"github.com/bnulwh/ollama/envconfig"
 )
 
 // StatusError is an error with an HTTP status code and message.

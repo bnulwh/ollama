@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ollama/ollama/fs/ggml"
+	"github.com/bnulwh/ollama/fs/ggml"
 )
 
 type mixtralModel struct {

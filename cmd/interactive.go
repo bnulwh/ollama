@@ -14,11 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ollama/ollama/api"
-	"github.com/ollama/ollama/envconfig"
-	"github.com/ollama/ollama/readline"
-	"github.com/ollama/ollama/types/errtypes"
-	"github.com/ollama/ollama/types/model"
+	"github.com/bnulwh/ollama/api"
+	"github.com/bnulwh/ollama/envconfig"
+	"github.com/bnulwh/ollama/readline"
+	"github.com/bnulwh/ollama/types/errtypes"
+	"github.com/bnulwh/ollama/types/model"
 )
 
 type MultilineState int

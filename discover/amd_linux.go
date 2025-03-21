@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ollama/ollama/envconfig"
-	"github.com/ollama/ollama/format"
+	"github.com/bnulwh/ollama/envconfig"
+	"github.com/bnulwh/ollama/format"
 )
 
 // Discovery logic for AMD/ROCm GPUs
@@ -380,7 +380,7 @@ func AMDGetGPUInfo() ([]RocmGPUInfo, error) {
 				})
 
 				// TODO - consider discrete markdown just for ROCM troubleshooting?
-				slog.Warn("See https://github.com/ollama/ollama/blob/main/docs/gpu.md#overrides for HSA_OVERRIDE_GFX_VERSION usage")
+				slog.Warn("See https://github.com/bnulwh/ollama/blob/main/docs/gpu.md#overrides for HSA_OVERRIDE_GFX_VERSION usage")
 				continue
 			} else {
 				slog.Info("amdgpu is supported", "gpu", gpuInfo.ID, "gpu_type", gfx)

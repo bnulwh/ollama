@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ollama/ollama/fs/ggml"
+	"github.com/bnulwh/ollama/fs/ggml"
 )
 
 type phi3Model struct {

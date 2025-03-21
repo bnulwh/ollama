@@ -21,8 +21,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ollama/ollama/envconfig"
-	"github.com/ollama/ollama/format"
+	"github.com/bnulwh/ollama/envconfig"
+	"github.com/bnulwh/ollama/format"
 )
 
 type cudaHandles struct {

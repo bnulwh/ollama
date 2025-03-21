@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	fs "github.com/ollama/ollama/fs/ggml"
-	"github.com/ollama/ollama/ml"
-	"github.com/ollama/ollama/ml/backend/ggml"
-	"github.com/ollama/ollama/ml/nn"
-	"github.com/ollama/ollama/model/input"
+	"github.com/bnulwh/ollama/cmp"
+	fs "github.com/bnulwh/ollama/fs/ggml"
+	"github.com/bnulwh/ollama/ml"
+	"github.com/bnulwh/ollama/ml/backend/ggml"
+	"github.com/bnulwh/ollama/ml/nn"
+	"github.com/bnulwh/ollama/model/input"
 )
 
 func TestParseTags(t *testing.T) {

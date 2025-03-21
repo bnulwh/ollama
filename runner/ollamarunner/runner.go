@@ -23,15 +23,15 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/ollama/ollama/api"
-	"github.com/ollama/ollama/llm"
-	"github.com/ollama/ollama/ml"
-	"github.com/ollama/ollama/model"
-	"github.com/ollama/ollama/model/input"
-	"github.com/ollama/ollama/runner/common"
-	"github.com/ollama/ollama/sample"
+	"github.com/bnulwh/ollama/api"
+	"github.com/bnulwh/ollama/llm"
+	"github.com/bnulwh/ollama/ml"
+	"github.com/bnulwh/ollama/model"
+	"github.com/bnulwh/ollama/model/input"
+	"github.com/bnulwh/ollama/runner/common"
+	"github.com/bnulwh/ollama/sample"
 
-	_ "github.com/ollama/ollama/model/models"
+	_ "github.com/bnulwh/ollama/model/models"
 )
 
 type contextList struct {

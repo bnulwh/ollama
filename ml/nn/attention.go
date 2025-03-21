@@ -3,8 +3,8 @@ package nn
 import (
 	"fmt"
 
-	"github.com/ollama/ollama/kvcache"
-	"github.com/ollama/ollama/ml"
+	"github.com/bnulwh/ollama/kvcache"
+	"github.com/bnulwh/ollama/ml"
 )
 
 // Attention implements scaled dot-product attention for transformer models:

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ollama/ollama/model/input"
+	"github.com/bnulwh/ollama/model/input"
 )
 
 func TestCountCommon(t *testing.T) {

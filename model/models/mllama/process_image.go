@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/image/draw"
 
-	"github.com/ollama/ollama/ml"
+	"github.com/bnulwh/ollama/ml"
 )
 
 type ImageProcessor struct {

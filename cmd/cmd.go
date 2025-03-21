@@ -32,15 +32,15 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 
-	"github.com/ollama/ollama/api"
-	"github.com/ollama/ollama/envconfig"
-	"github.com/ollama/ollama/format"
-	"github.com/ollama/ollama/parser"
-	"github.com/ollama/ollama/progress"
-	"github.com/ollama/ollama/runner"
-	"github.com/ollama/ollama/server"
-	"github.com/ollama/ollama/types/model"
-	"github.com/ollama/ollama/version"
+	"github.com/bnulwh/ollama/api"
+	"github.com/bnulwh/ollama/envconfig"
+	"github.com/bnulwh/ollama/format"
+	"github.com/bnulwh/ollama/parser"
+	"github.com/bnulwh/ollama/progress"
+	"github.com/bnulwh/ollama/runner"
+	"github.com/bnulwh/ollama/server"
+	"github.com/bnulwh/ollama/types/model"
+	"github.com/bnulwh/ollama/version"
 )
 
 var errModelfileNotFound = errors.New("specified Modelfile wasn't found")

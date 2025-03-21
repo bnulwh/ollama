@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ollama/ollama/auth"
+	"github.com/bnulwh/ollama/auth"
 	"github.com/ollama/ollama/version"
 )
 

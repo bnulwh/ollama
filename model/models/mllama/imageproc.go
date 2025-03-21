@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/image/draw"
 
-	"github.com/ollama/ollama/model/imageproc"
+	"github.com/bnulwh/ollama/model/imageproc"
 )
 
 func getSupportedAspectRatios(maxTiles int) []image.Point {
