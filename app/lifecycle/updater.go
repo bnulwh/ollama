@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/bnulwh/ollama/auth"
-	"github.com/ollama/ollama/version"
+	"github.com/bnulwh/ollama/version"
 )
 
 var (
