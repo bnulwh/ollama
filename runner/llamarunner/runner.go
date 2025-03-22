@@ -28,62 +28,64 @@ import (
 	"github.com/bnulwh/ollama/runner/common"
 )
 
+// 表示输入的两种类型——文本 token 或图像嵌入。
 // input is an element of the prompt to process, either
 // a token or an image embedding (generated from a vision projector)
 type input struct {
-	token int
+	token int // 单个 token
 
 	// embed is an image embedding
-	embed []float32
+	embed []float32 // 图像嵌入向量
 }
 
+// 跟踪单个生成序列的状态，包括输入、输出、缓存和停止条件。
 type Sequence struct {
 	// batch index
-	iBatch int
+	iBatch int // 当前批次索引
 
 	// number of tokens predicted so far
-	numPredicted int
+	numPredicted int // 已生成的 token 数量
 
 	// prompt inputs left to evaluate
-	inputs []input
+	inputs []input // 待处理的输入（token 或图像嵌入）
 
 	// inputs that have been added to a batch but not yet submitted to Decode
-	pendingInputs []input
+	pendingInputs []input // 已加入批次但未提交解码的输入
 
 	// tokens that have been generated but not returned yet (e.g. for stop sequences)
-	pendingResponses []string
+	pendingResponses []string // 已生成但未返回的响应片段
 
 	// input cache being used by this sequence
-	cache *InputCacheSlot
+	cache *InputCacheSlot // 输入缓存槽
 
 	// does this sequence require cross-attention layers to be processed? - if we have seen
 	// an image for certain multi-modal models
-	crossAttention bool
+	crossAttention bool // 是否需要交叉注意力（多模态模型）
 
 	// channel to send responses over
-	responses chan string
+	responses chan string // 响应传输通道
 
 	// channel to stop decoding (such as if the remote connection is closed)
-	quit chan bool
+	quit chan bool // 停止信号通道
 
 	// number of tokens to predict
-	numPredict int
+	numPredict int // 最大生成 token 数
 
-	samplingCtx *llama.SamplingContext
+	samplingCtx *llama.SamplingContext // 采样上下文
 
 	// channel to send back the embedding if embedding only
-	embedding chan []float32
+	embedding chan []float32 // 嵌入向量传输通道
 
 	// stop sequences
-	stop []string
+	stop []string // 停止词列表
 
 	// number of inputs to keep at the beginning when shifting context window
-	numKeep int
+	numKeep int // 上下文保留的 token 数
 
 	// true if an embedding are to be returned instead of text generation
-	embeddingOnly bool
+	embeddingOnly bool // 是否仅生成嵌入
 
-	doneReason string
+	doneReason string // 完成原因（如 "stop"、"limit"）
 
 	// Metrics
 	startProcessingTime time.Time
@@ -100,11 +102,12 @@ type NewSequenceParams struct {
 	embedding      bool
 }
 
+// 根据用户输入的文本和图像，生成初始化的 Sequence 对象。
 func (s *Server) NewSequence(prompt string, images []llm.ImageData, params NewSequenceParams) (*Sequence, error) {
 	s.ready.Wait()
 
 	startTime := time.Now()
-
+	// 处理输入（tokenize 文本 + 生成图像嵌入）
 	inputs, err := s.inputs(prompt, images)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process inputs: %w", err)
@@ -134,6 +137,7 @@ func (s *Server) NewSequence(prompt string, images []llm.ImageData, params NewSe
 
 	var sc *llama.SamplingContext
 	if params.samplingParams != nil {
+		// 初始化采样上下文（如温度、重复惩罚等参数）
 		sc, err = llama.NewSamplingContext(s.model, *params.samplingParams)
 		if err != nil {
 			return nil, err
@@ -144,7 +148,7 @@ func (s *Server) NewSequence(prompt string, images []llm.ImageData, params NewSe
 			}
 		}
 	}
-
+	// 构建并返回 Sequence 实例
 	return &Sequence{
 		inputs:              inputs,
 		numPromptInputs:     len(inputs),
@@ -218,52 +222,53 @@ func (s *Server) inputs(prompt string, images []llm.ImageData) ([]input, error) 
 	return inputs, nil
 }
 
+// 管理模型推理服务，包括并发控制、缓存管理和请求处理。
 type Server struct {
 	// is the server ready to process requests?
 	// protects access to model and image
-	ready sync.WaitGroup
+	ready sync.WaitGroup // 模型加载完成信号
 
 	// loaded model
-	model *llama.Model
+	model *llama.Model // 加载的模型实例
 
 	// image model context for multi-modal models
-	image *ImageContext
+	image *ImageContext // 多模态图像处理上下文
 
 	// status for external health reporting - loading, ready to serve, etc.
-	status llm.ServerStatus
+	status llm.ServerStatus // 服务器状态（加载中/就绪）
 
 	// current progress on loading the model
-	progress float32
+	progress float32 // 模型加载进度
 
 	// number of simultaneous requests to handle
-	parallel int
+	parallel int // 最大并行序列数
 
 	// maximum number of elements in a batch (per sequence)
 	// TODO (jmorganca): make this n_batch
-	batchSize int
+	batchSize int // 每批次处理的 token 数
 
 	// protects access to everything below this line
 	// this is context state needed for decoding
-	mu sync.Mutex
+	mu sync.Mutex // 保护共享资源的互斥锁
 
 	// indicates that data is ready for processing
-	cond *sync.Cond
+	cond *sync.Cond // 条件变量（用于协程同步）
 
 	// decoding state
-	lc *llama.Context
+	lc *llama.Context // llama.cpp 上下文
 
 	// the list of simultaneous sequences being evaluated
-	seqs []*Sequence
+	seqs []*Sequence // 当前处理的序列列表
 
 	// seqs can have a maximum of parallel entries, which
 	// is enfoced by seqSem
-	seqsSem *semaphore.Weighted
+	seqsSem *semaphore.Weighted // 控制并发的信号量
 
 	// KV cache
-	cache *InputCache
+	cache *InputCache // 输入缓存管理
 
 	// next sequence for prompt processing to avoid starvation
-	nextSeq int
+	nextSeq int // 下一个待处理序列的索引
 }
 
 func (s *Server) allNil() bool {
@@ -352,6 +357,7 @@ func (s *Server) run(ctx context.Context) {
 	}
 }
 
+// 批量处理输入数据，调用 llama.cpp 进行解码，生成文本或嵌入。
 // TODO (jmorganca): processBatch should be simplified, removing:
 // * sampling
 // * stop token checking
@@ -368,7 +374,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 
 	var batch *llama.Batch
 	crossAttention := false
-
+	// 遍历所有序列，填充批次数据
 	seqIdx := s.nextSeq - 1
 	for range s.seqs {
 		seqIdx = (seqIdx + 1) % len(s.seqs)
