@@ -4,6 +4,13 @@ import (
 	"strings"
 )
 
+/*
+提供了文本生成过程中停止词检测和安全截断的核心工具，关键功能包括：
+停止词匹配：完全匹配与部分匹配。
+安全截断：保持片段结构，避免无效 Unicode。
+UTF-8 校验：确保截断后的文本合法性。
+*/
+
 // 检查字符串 sequence 中是否包含任意一个停止词（stops）。
 // 用于在文本生成过程中检测是否触发了停止条件。
 func FindStop(sequence string, stops []string) (bool, string) {
@@ -73,18 +80,22 @@ func TruncateStop(pieces []string, stop string) ([]string, bool) {
 	return result, tokenTruncated
 }
 
+// 检查字符串末尾是否存在不完整的 UTF-8 字符。
+// 避免因截断导致无效的 Unicode 字符（如截断多字节字符的中间字节）
 func IncompleteUnicode(token string) bool {
 	incomplete := false
 
 	// check if there is incomplete UTF-8 character at the end
 	for i := 1; i < 5 && i <= len(token); i++ {
+		// 从后向前检查字节
 		c := token[len(token)-i]
 
 		if (c & 0xc0) == 0x80 {
+			// 跳过连续字节（UTF-8 中间字节）
 			// continuation byte: 10xxxxxx
 			continue
 		}
-
+		// 检查 UTF-8 起始字节的编码长度
 		if (c & 0xe0) == 0xc0 {
 			// 2-byte character: 110xxxxx ...
 			incomplete = i < 2
