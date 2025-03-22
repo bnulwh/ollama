@@ -4,6 +4,8 @@ import (
 	"strings"
 )
 
+// 检查字符串 sequence 中是否包含任意一个停止词（stops）。
+// 用于在文本生成过程中检测是否触发了停止条件。
 func FindStop(sequence string, stops []string) (bool, string) {
 	for _, stop := range stops {
 		if strings.Contains(sequence, stop) {
@@ -14,6 +16,8 @@ func FindStop(sequence string, stops []string) (bool, string) {
 	return false, ""
 }
 
+// 检查 sequence 的后缀是否部分匹配任意停止词的前缀。
+// 避免生成文本的末尾出现不完整的停止词（如停止词是 "stop"，而生成文本以 "st" 结尾）。
 func ContainsStopSuffix(sequence string, stops []string) bool {
 	for _, stop := range stops {
 		for i := 1; i <= len(stop); i++ {
@@ -26,19 +30,23 @@ func ContainsStopSuffix(sequence string, stops []string) bool {
 	return false
 }
 
+// 避免生成文本的末尾出现不完整的停止词（如停止词是 "stop"，而生成文本以 "st" 结尾）。
+// 在生成文本时，若检测到停止词，需安全截断以避免生成无效字符。
 // truncateStop removes the provided stop string from pieces,
 // returning the partial pieces with stop removed, including truncating
 // the last piece if required (and signalling if this was the case)
 func TruncateStop(pieces []string, stop string) ([]string, bool) {
+	// 将片段合并为完整字符串
 	joined := strings.Join(pieces, "")
 
 	index := strings.Index(joined, stop)
 	if index == -1 {
+		// 未找到停止词，直接返回原片段
 		return pieces, false
 	}
-
+	// 截断到停止词位置
 	joined = joined[:index]
-
+	// 按原片段长度重新分割字符串
 	// Split truncated string back into pieces of original lengths
 	lengths := make([]int, len(pieces))
 	for i, piece := range pieces {
@@ -56,7 +64,7 @@ func TruncateStop(pieces []string, stop string) ([]string, bool) {
 		end := start + length
 		if end > len(joined) {
 			end = len(joined)
-			tokenTruncated = true
+			tokenTruncated = true // 标记最后一个片段被截断
 		}
 		result = append(result, joined[start:end])
 		start = end
