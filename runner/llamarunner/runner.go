@@ -383,7 +383,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		if seq == nil {
 			continue
 		}
-
+		// 检查生成限制（如达到最大 token 数）
 		// if past the num predict limit
 		if seq.numPredict > 0 && seq.numPredicted >= seq.numPredict {
 			s.removeSequence(seqIdx, "limit")
@@ -425,6 +425,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 			}
 
 			crossAttention = seq.crossAttention
+			// 将输入加入批次（文本 token 或图像嵌入）
 			batch.Add(input.token, input.embed, len(seq.cache.Inputs)+len(seq.pendingInputs), i+1 == len(seq.inputs), seq.cache.Id)
 			seq.pendingInputs = append(seq.pendingInputs, input)
 			seq.iBatch = batch.NumTokens() - 1
@@ -438,7 +439,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 	}
 
 	s.lc.SetCrossAttention(crossAttention)
-
+	// 调用 llama.cpp 解码批次
 	err := s.lc.Decode(batch)
 	if err != nil {
 		return fmt.Errorf("failed to decode batch: %w", err)
@@ -450,7 +451,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		// task may be incorrectly invalidated causing a crash
 		s.lc.Synchronize()
 	}
-
+	// 处理生成结果（采样 token、检测停止词等）
 	for i, seq := range s.seqs {
 		if seq == nil {
 			continue
@@ -471,7 +472,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 		if seq.numDecoded == 1 {
 			seq.startGenerationTime = time.Now()
 		}
-
+		// 处理嵌入生成或文本生成
 		// if done processing the prompt, generate an embedding and return
 		if seq.embeddingOnly {
 			embed := s.lc.GetEmbeddingsSeq(seq.cache.Id)
@@ -505,7 +506,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 
 		seq.pendingResponses = append(seq.pendingResponses, piece)
 		sequence := strings.Join(seq.pendingResponses, "")
-
+		// 检测停止词并截断
 		if ok, stop := common.FindStop(sequence, seq.stop); ok {
 			slog.Debug("hit stop token", "pending", seq.pendingResponses, "stop", stop)
 
@@ -548,6 +549,7 @@ func (s *Server) processBatch(tokenBatch *llama.Batch, embedBatch *llama.Batch) 
 	return nil
 }
 
+// 处理 /completion 请求，生成文本并流式返回
 func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 	var req llm.CompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -569,7 +571,7 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
-
+	// 初始化采样参数（温度、top-k 等）
 	// Extract options from the CompletionRequest
 	samplingParams := llama.SamplingParams{
 		TopK:           req.Options.TopK,
@@ -587,7 +589,7 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 		Seed:           uint32(req.Options.Seed),
 		Grammar:        req.Grammar,
 	}
-
+	// 创建新序列
 	seq, err := s.NewSequence(req.Prompt, req.Images, NewSequenceParams{
 		numPredict:     req.Options.NumPredict,
 		stop:           req.Options.Stop,
@@ -599,7 +601,7 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to create new sequence: %v", err), http.StatusInternalServerError)
 		return
 	}
-
+	// 将序列加入处理队列
 	// Ensure there is a place to put the sequence, released when removed from s.seqs
 	if err := s.seqsSem.Acquire(r.Context(), 1); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -635,12 +637,13 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not find an available sequence", http.StatusInternalServerError)
 		return
 	}
-
+	// 流式返回生成结果
 	for {
 		select {
 		case <-r.Context().Done():
 			close(seq.quit)
 			return
+
 		case content, ok := <-seq.responses:
 			if ok {
 				if err := json.NewEncoder(w).Encode(&llm.CompletionResponse{
@@ -675,6 +678,7 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// 处理 /embedding 请求，生成并返回文本或图像的嵌入向量。
 func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 	var req llm.EmbeddingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -685,7 +689,7 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	slog.Debug("embedding request", "content", req.Content)
-
+	// 创建仅生成嵌入的序列
 	seq, err := s.NewSequence(req.Content, nil, NewSequenceParams{embedding: true})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create new sequence: %v", err), http.StatusInternalServerError)
@@ -724,7 +728,7 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not find an available sequence", http.StatusInternalServerError)
 		return
 	}
-
+	// 等待嵌入生成并返回
 	embedding := <-seq.embedding
 
 	if err := json.NewEncoder(w).Encode(&llm.EmbeddingResponse{
@@ -804,7 +808,19 @@ func (s *Server) loadModel(
 	s.ready.Done()
 }
 
+/*
+流程：
+
+解析命令行参数，配置模型加载选项。
+
+初始化 Server 实例并加载模型。
+
+启动后台协程处理生成请求。
+
+监听 HTTP 端口，处理 /completion、/embedding 和 /health 请求。
+*/
 func Execute(args []string) error {
+	// 解析命令行参数（模型路径、并行数、GPU 层数等）
 	fs := flag.NewFlagSet("runner", flag.ExitOnError)
 	mpath := fs.String("model", "", "Path to model binary file")
 	ppath := fs.String("mmproj", "", "Path to projector binary file")
@@ -852,7 +868,7 @@ func Execute(args []string) error {
 	slog.Info("starting go runner")
 
 	llama.BackendInit()
-
+	// 初始化服务器和模型
 	server := &Server{
 		batchSize: *batchSize,
 		parallel:  *parallel,
@@ -889,9 +905,9 @@ func Execute(args []string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
+	// 启动后台处理协程
 	go server.run(ctx)
-
+	// 启动 HTTP 服务器
 	addr := "127.0.0.1:" + strconv.Itoa(*port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
