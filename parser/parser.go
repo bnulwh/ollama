@@ -23,8 +23,9 @@ import (
 
 var ErrModelNotFound = errors.New("no Modelfile or safetensors files found")
 
+// Modelfile 表示解析后的模型文件结构
 type Modelfile struct {
-	Commands []Command
+	Commands []Command // 存储所有解析后的命令
 }
 
 func (f Modelfile) String() string {
@@ -38,22 +39,24 @@ func (f Modelfile) String() string {
 
 var deprecatedParameters = []string{"penalize_newline"}
 
+// 将 Modelfile 转换为 API 请求结构体
 // CreateRequest creates a new *api.CreateRequest from an existing Modelfile
 func (f Modelfile) CreateRequest(relativeDir string) (*api.CreateRequest, error) {
-	req := &api.CreateRequest{}
+	req := &api.CreateRequest{} // 初始化请求
 
 	var messages []api.Message
 	var licenses []string
 	params := make(map[string]any)
-
+	// 遍历所有命令，分类处理
 	for _, c := range f.Commands {
 		switch c.Name {
 		case "model":
+			// 处理模型路径，
 			path, err := expandPath(c.Args, relativeDir)
 			if err != nil {
 				return nil, err
 			}
-
+			//计算文件哈希
 			digestMap, err := fileDigestMap(path)
 			if errors.Is(err, os.ErrNotExist) {
 				req.From = c.Args
@@ -70,6 +73,7 @@ func (f Modelfile) CreateRequest(relativeDir string) (*api.CreateRequest, error)
 				}
 			}
 		case "adapter":
+			// 处理适配器文件
 			path, err := expandPath(c.Args, relativeDir)
 			if err != nil {
 				return nil, err
@@ -82,15 +86,19 @@ func (f Modelfile) CreateRequest(relativeDir string) (*api.CreateRequest, error)
 
 			req.Adapters = digestMap
 		case "template":
+			// 设置模板
 			req.Template = c.Args
 		case "system":
+			// 设置系统消息
 			req.System = c.Args
 		case "license":
 			licenses = append(licenses, c.Args)
 		case "message":
+			// 解析消息角色和内容（如 "user: Hello"）
 			role, msg, _ := strings.Cut(c.Args, ": ")
 			messages = append(messages, api.Message{Role: role, Content: msg})
 		default:
+			// 处理参数（如 "learning_rate 0.01"）
 			if slices.Contains(deprecatedParameters, c.Name) {
 				fmt.Printf("warning: parameter %s is deprecated\n", c.Name)
 				break
@@ -126,6 +134,7 @@ func (f Modelfile) CreateRequest(relativeDir string) (*api.CreateRequest, error)
 	return req, nil
 }
 
+// 遍历目录或单个文件，生成哈希映射
 func fileDigestMap(path string) (map[string]string, error) {
 	fl := make(map[string]string)
 
@@ -136,7 +145,7 @@ func fileDigestMap(path string) (map[string]string, error) {
 
 	var files []string
 	if fi.IsDir() {
-		files, err = filesForModel(path)
+		files, err = filesForModel(path) // 匹配模型文件模式（如 *.safetensors）
 		if err != nil {
 			return nil, err
 		}
@@ -155,6 +164,7 @@ func fileDigestMap(path string) (map[string]string, error) {
 	return fl, nil
 }
 
+// 计算文件的 SHA256 哈希
 func digestForFile(filename string) (string, error) {
 	filepath, err := filepath.EvalSymlinks(filename)
 	if err != nil {
@@ -168,48 +178,56 @@ func digestForFile(filename string) (string, error) {
 	defer bin.Close()
 
 	hash := sha256.New()
+	// 读取文件内容并计算哈希
 	if _, err := io.Copy(hash, bin); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("sha256:%x", hash.Sum(nil)), nil
 }
 
-func filesForModel(path string) ([]string, error) {
-	detectContentType := func(path string) (string, error) {
-		f, err := os.Open(path)
-		if err != nil {
-			return "", err
-		}
-		defer f.Close()
+// 根据内容获取文件类型
+func detectContentType(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
 
-		var b bytes.Buffer
-		b.Grow(512)
+	var b bytes.Buffer
+	b.Grow(512)
 
-		if _, err := io.CopyN(&b, f, 512); err != nil && !errors.Is(err, io.EOF) {
-			return "", err
-		}
-
-		contentType, _, _ := strings.Cut(http.DetectContentType(b.Bytes()), ";")
-		return contentType, nil
+	if _, err := io.CopyN(&b, f, 512); err != nil && !errors.Is(err, io.EOF) {
+		return "", err
 	}
 
-	glob := func(pattern, contentType string) ([]string, error) {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
+	contentType, _, _ := strings.Cut(http.DetectContentType(b.Bytes()), ";")
+	return contentType, nil
+}
+
+// 双重匹配文件，包括扩展名和文件类型
+func glob(pattern, contentType string) ([]string, error) {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, safetensor := range matches {
+		if ct, err := detectContentType(safetensor); err != nil {
 			return nil, err
+		} else if ct != contentType {
+			return nil, fmt.Errorf("invalid content type: expected %s for %s", ct, safetensor)
 		}
-
-		for _, safetensor := range matches {
-			if ct, err := detectContentType(safetensor); err != nil {
-				return nil, err
-			} else if ct != contentType {
-				return nil, fmt.Errorf("invalid content type: expected %s for %s", ct, safetensor)
-			}
-		}
-
-		return matches, nil
 	}
 
+	return matches, nil
+}
+
+// 匹配模型文件模式（支持 safetensors、bin、gguf 等）
+func filesForModel(path string) ([]string, error) {
+	// 文件内容校验
+	// detectContentType :=
+
+	// 使用 glob 模式匹配文件
 	var files []string
 	if st, _ := glob(filepath.Join(path, "model*.safetensors"), "application/octet-stream"); len(st) > 0 {
 		// safetensors files might be unresolved git lfs references; skip if they are
@@ -266,9 +284,10 @@ func filesForModel(path string) ([]string, error) {
 	return files, nil
 }
 
+// Command 表示单条命令（如 FROM、PARAMETER）
 type Command struct {
-	Name string
-	Args string
+	Name string // 命令名称（如 "model"）
+	Args string // 命令参数（如文件路径或配置值）
 }
 
 func (c Command) String() string {
@@ -288,15 +307,16 @@ func (c Command) String() string {
 	return sb.String()
 }
 
+// 状态定义（解析过程中的不同阶段）
 type state int
 
 const (
-	stateNil state = iota
-	stateName
-	stateValue
+	stateNil   state = iota
+	stateName        // 解析命令名称
+	stateValue       // 解析命令参数
 	stateParameter
 	stateMessage
-	stateComment
+	stateComment // 解析注释
 )
 
 var (
@@ -305,6 +325,7 @@ var (
 	errInvalidCommand     = errors.New("command must be one of \"from\", \"license\", \"template\", \"system\", \"adapter\", \"parameter\", or \"message\"")
 )
 
+// 自定义解析错误（包含行号）
 type ParserError struct {
 	LineNumber int
 	Msg        string
@@ -317,6 +338,7 @@ func (e *ParserError) Error() string {
 	return e.Msg
 }
 
+// 解析 Modelfile 内容
 func ParseFile(r io.Reader) (*Modelfile, error) {
 	var cmd Command
 	var curr state
@@ -325,10 +347,10 @@ func ParseFile(r io.Reader) (*Modelfile, error) {
 	var role string
 
 	var f Modelfile
-
+	// 处理 BOM 标记（兼容 UTF-8 编码）
 	tr := unicode.BOMOverride(unicode.UTF8.NewDecoder())
 	br := bufio.NewReader(transform.NewReader(r, tr))
-
+	// 逐字符解析
 	for {
 		r, _, err := br.ReadRune()
 		if errors.Is(err, io.EOF) {
@@ -569,6 +591,7 @@ func isValidCommand(cmd string) bool {
 	}
 }
 
+// 处理路径中的 ~ 符号（如 "~/models" → "/home/user/models"）
 func expandPathImpl(path, relativeDir string, currentUserFunc func() (*user.User, error), lookupUserFunc func(string) (*user.User, error)) (string, error) {
 	if filepath.IsAbs(path) || strings.HasPrefix(path, "\\") || strings.HasPrefix(path, "/") {
 		return filepath.Abs(path)
