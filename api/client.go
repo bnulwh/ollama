@@ -30,13 +30,15 @@ import (
 	"github.com/bnulwh/ollama/version"
 )
 
+// Client 封装与 ollama 服务交互的客户端状态
 // Client encapsulates client state for interacting with the ollama
 // service. Use [ClientFromEnvironment] to create new Clients.
 type Client struct {
-	base *url.URL
-	http *http.Client
+	base *url.URL     // 服务基础 URL（如 http://localhost:11434）
+	http *http.Client // HTTP客户端（默认使用 http.DefaultClient）
 }
 
+// 检查 HTTP 响应状态码并解析错误信息
 func checkError(resp *http.Response, body []byte) error {
 	if resp.StatusCode < http.StatusBadRequest {
 		return nil
@@ -44,15 +46,16 @@ func checkError(resp *http.Response, body []byte) error {
 
 	apiError := StatusError{StatusCode: resp.StatusCode}
 
-	err := json.Unmarshal(body, &apiError)
+	err := json.Unmarshal(body, &apiError) // 尝试解析错误详情
 	if err != nil {
 		// Use the full body as the message if we fail to decode a response.
-		apiError.ErrorMessage = string(body)
+		apiError.ErrorMessage = string(body) // 直接返回原始错误内容
 	}
 
 	return apiError
 }
 
+// 从环境变量 OLLAMA_HOST 创建客户端
 // ClientFromEnvironment creates a new [Client] using configuration from the
 // environment variable OLLAMA_HOST, which points to the network host and
 // port on which the ollama service is listening. The format of this variable
@@ -64,11 +67,12 @@ func checkError(resp *http.Response, body []byte) error {
 // used.
 func ClientFromEnvironment() (*Client, error) {
 	return &Client{
-		base: envconfig.Host(),
+		base: envconfig.Host(), // 从环境变量解析服务地址
 		http: http.DefaultClient,
 	}, nil
 }
 
+// 手动创建客户端（直接指定 base 和 http）
 func NewClient(base *url.URL, http *http.Client) *Client {
 	return &Client{
 		base: base,
@@ -76,18 +80,19 @@ func NewClient(base *url.URL, http *http.Client) *Client {
 	}
 }
 
+// 处理通用 HTTP 请求（同步）
 func (c *Client) do(ctx context.Context, method, path string, reqData, respData any) error {
 	var reqBody io.Reader
 	var data []byte
 	var err error
 
 	switch reqData := reqData.(type) {
-	case io.Reader:
+	case io.Reader: // 直接使用流式数据（如文件上传）
 		// reqData is already an io.Reader
 		reqBody = reqData
-	case nil:
+	case nil: // 无请求体（如 GET 请求）
 		// noop
-	default:
+	default: // 结构体转换为 JSON
 		data, err = json.Marshal(reqData)
 		if err != nil {
 			return err
@@ -95,17 +100,17 @@ func (c *Client) do(ctx context.Context, method, path string, reqData, respData 
 
 		reqBody = bytes.NewReader(data)
 	}
-
+	// 构造请求 URL 和请求对象
 	requestURL := c.base.JoinPath(path)
 	request, err := http.NewRequestWithContext(ctx, method, requestURL.String(), reqBody)
 	if err != nil {
 		return err
 	}
-
+	// 设置请求头
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", fmt.Sprintf("ollama/%s (%s %s) Go/%s", version.Version, runtime.GOARCH, runtime.GOOS, runtime.Version()))
-
+	// 发送请求并处理响应
 	respObj, err := c.http.Do(request)
 	if err != nil {
 		return err
@@ -116,12 +121,13 @@ func (c *Client) do(ctx context.Context, method, path string, reqData, respData 
 	if err != nil {
 		return err
 	}
-
+	// 检查 HTTP 错误状态码
 	if err := checkError(respObj, respBody); err != nil {
 		return err
 	}
 
 	if len(respBody) > 0 && respData != nil {
+		// 反序列化响应数据到指定结构体
 		if err := json.Unmarshal(respBody, respData); err != nil {
 			return err
 		}
@@ -131,6 +137,7 @@ func (c *Client) do(ctx context.Context, method, path string, reqData, respData 
 
 const maxBufferSize = 512 * format.KiloByte
 
+// 处理流式 HTTP 请求（如生成、聊天等）
 func (c *Client) stream(ctx context.Context, method, path string, data any, fn func([]byte) error) error {
 	var buf io.Reader
 	if data != nil {
@@ -138,20 +145,20 @@ func (c *Client) stream(ctx context.Context, method, path string, data any, fn f
 		if err != nil {
 			return err
 		}
-
+		// 将数据转为 JSON 流
 		buf = bytes.NewBuffer(bts)
 	}
-
+	// 构造请求
 	requestURL := c.base.JoinPath(path)
 	request, err := http.NewRequestWithContext(ctx, method, requestURL.String(), buf)
 	if err != nil {
 		return err
 	}
-
+	// 设置请求头（Accept 为流式格式）
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/x-ndjson")
 	request.Header.Set("User-Agent", fmt.Sprintf("ollama/%s (%s %s) Go/%s", version.Version, runtime.GOARCH, runtime.GOOS, runtime.Version()))
-
+	// 发送请求并逐行处理响应
 	response, err := c.http.Do(request)
 	if err != nil {
 		return err
@@ -161,7 +168,7 @@ func (c *Client) stream(ctx context.Context, method, path string, data any, fn f
 	scanner := bufio.NewScanner(response.Body)
 	// increase the buffer size to avoid running out of space
 	scanBuf := make([]byte, 0, maxBufferSize)
-	scanner.Buffer(scanBuf, maxBufferSize)
+	scanner.Buffer(scanBuf, maxBufferSize) // 设置缓冲区大小（512KB）
 	for scanner.Scan() {
 		var errorResponse struct {
 			Error string `json:"error,omitempty"`
@@ -173,9 +180,9 @@ func (c *Client) stream(ctx context.Context, method, path string, data any, fn f
 		}
 
 		if errorResponse.Error != "" {
-			return errors.New(errorResponse.Error)
+			return errors.New(errorResponse.Error) // 处理服务器返回的错误
 		}
-
+		// 处理 HTTP 错误
 		if response.StatusCode >= http.StatusBadRequest {
 			return StatusError{
 				StatusCode:   response.StatusCode,
@@ -183,7 +190,7 @@ func (c *Client) stream(ctx context.Context, method, path string, data any, fn f
 				ErrorMessage: errorResponse.Error,
 			}
 		}
-
+		// 调用回调函数处理每行数据
 		if err := fn(bts); err != nil {
 			return err
 		}
@@ -197,6 +204,7 @@ func (c *Client) stream(ctx context.Context, method, path string, data any, fn f
 // [Client.Generate] will stop generating and return this error.
 type GenerateResponseFunc func(GenerateResponse) error
 
+// 用于向模型发送提示并逐步接收生成结果。
 // Generate generates a response for a given prompt. The req parameter should
 // be populated with prompt details. fn is called for each response (there may
 // be multiple responses, e.g. in case streaming is enabled).
@@ -207,7 +215,7 @@ func (c *Client) Generate(ctx context.Context, req *GenerateRequest, fn Generate
 			return err
 		}
 
-		return fn(resp)
+		return fn(resp) // 逐块回调生成的文本
 	})
 }
 
@@ -216,6 +224,7 @@ func (c *Client) Generate(ctx context.Context, req *GenerateRequest, fn Generate
 // [Client.Chat] will stop generating and return this error.
 type ChatResponseFunc func(ChatResponse) error
 
+// 维护聊天上下文并接收模型的回复。
 // Chat generates the next message in a chat. [ChatRequest] may contain a
 // sequence of messages which can be used to maintain chat history with a model.
 // fn is called for each response (there may be multiple responses, e.g. if case
@@ -227,7 +236,7 @@ func (c *Client) Chat(ctx context.Context, req *ChatRequest, fn ChatResponseFunc
 			return err
 		}
 
-		return fn(resp)
+		return fn(resp) // 逐条回调聊天消息
 	})
 }
 
@@ -236,6 +245,7 @@ func (c *Client) Chat(ctx context.Context, req *ChatRequest, fn ChatResponseFunc
 // returns an error, [Client.Pull] will stop the process and return this error.
 type PullProgressFunc func(ProgressResponse) error
 
+// 从服务器下载模型并报告进度。
 // Pull downloads a model from the ollama library. fn is called each time
 // progress is made on the request and can be used to display a progress bar,
 // etc.
@@ -246,7 +256,7 @@ func (c *Client) Pull(ctx context.Context, req *PullRequest, fn PullProgressFunc
 			return err
 		}
 
-		return fn(resp)
+		return fn(resp) // 回调下载进度（如 50%）
 	})
 }
 
@@ -289,6 +299,7 @@ func (c *Client) Create(ctx context.Context, req *CreateRequest, fn CreateProgre
 	})
 }
 
+// 同步获取本地模型列表
 // List lists models that are available locally.
 func (c *Client) List(ctx context.Context) (*ListResponse, error) {
 	var lr ListResponse
@@ -298,6 +309,7 @@ func (c *Client) List(ctx context.Context) (*ListResponse, error) {
 	return &lr, nil
 }
 
+// 同步获取本地运行模型列表
 // ListRunning lists running models.
 func (c *Client) ListRunning(ctx context.Context) (*ProcessResponse, error) {
 	var lr ProcessResponse
@@ -316,6 +328,7 @@ func (c *Client) Copy(ctx context.Context, req *CopyRequest) error {
 	return nil
 }
 
+// 删除模型
 // Delete deletes a model and its data.
 func (c *Client) Delete(ctx context.Context, req *DeleteRequest) error {
 	if err := c.do(ctx, http.MethodDelete, "/api/delete", req, nil); err != nil {
