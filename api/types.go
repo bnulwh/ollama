@@ -14,20 +14,22 @@ import (
 	"github.com/bnulwh/ollama/envconfig"
 )
 
+// StatusError 封装 HTTP 状态码和错误消息
 // StatusError is an error with an HTTP status code and message.
 type StatusError struct {
-	StatusCode   int
-	Status       string
-	ErrorMessage string `json:"error"`
+	StatusCode   int    // HTTP 状态码（如 404）
+	Status       string // HTTP 状态文本（如 "Not Found"）
+	ErrorMessage string `json:"error"` // 服务端返回的错误消息
 }
 
+// 错误信息格式化
 func (e StatusError) Error() string {
 	switch {
 	case e.Status != "" && e.ErrorMessage != "":
 		return fmt.Sprintf("%s: %s", e.Status, e.ErrorMessage)
 	case e.Status != "":
 		return e.Status
-	case e.ErrorMessage != "":
+	case e.ErrorMessage != "": // 优先返回服务端错误消息
 		return e.ErrorMessage
 	default:
 		// this should not happen
@@ -38,32 +40,33 @@ func (e StatusError) Error() string {
 // ImageData represents the raw binary data of an image file.
 type ImageData []byte
 
+// 用于向模型发送生成请求
 // GenerateRequest describes a request sent by [Client.Generate]. While you
 // have to specify the Model and Prompt fields, all the other fields have
 // reasonable defaults for basic uses.
 type GenerateRequest struct {
 	// Model is the model name; it should be a name familiar to Ollama from
 	// the library at https://ollama.com/library
-	Model string `json:"model"`
+	Model string `json:"model"` // 模型名称（如 "llama3"）
 
 	// Prompt is the textual prompt to send to the model.
-	Prompt string `json:"prompt"`
+	Prompt string `json:"prompt"` // 用户输入的提示文本
 
 	// Suffix is the text that comes after the inserted text.
 	Suffix string `json:"suffix"`
 
 	// System overrides the model's default system message/prompt.
-	System string `json:"system"`
+	System string `json:"system"` // 覆盖模型的默认系统消息
 
 	// Template overrides the model's default prompt template.
 	Template string `json:"template"`
 
 	// Context is the context parameter returned from a previous call to
 	// [Client.Generate]. It can be used to keep a short conversational memory.
-	Context []int `json:"context,omitempty"`
+	Context []int `json:"context,omitempty"` // 上下文 token（用于多轮对话）
 
 	// Stream specifies whether the response is streaming; it is true by default.
-	Stream *bool `json:"stream,omitempty"`
+	Stream *bool `json:"stream,omitempty"` // 是否启用流式响应（默认 true）
 
 	// Raw set to true means that no formatting will be applied to the prompt.
 	Raw bool `json:"raw,omitempty"`
@@ -77,20 +80,21 @@ type GenerateRequest struct {
 
 	// Images is an optional list of base64-encoded images accompanying this
 	// request, for multimodal models.
-	Images []ImageData `json:"images,omitempty"`
+	Images []ImageData `json:"images,omitempty"` // 多模态模型的图像数据（Base64）
 
 	// Options lists model-specific options. For example, temperature can be
 	// set through this field, if the model supports it.
-	Options map[string]interface{} `json:"options"`
+	Options map[string]interface{} `json:"options"` // 模型参数（如温度、top-p）
 }
 
+// 用于多轮对话请求。
 // ChatRequest describes a request sent by [Client.Chat].
 type ChatRequest struct {
 	// Model is the model name, as in [GenerateRequest].
-	Model string `json:"model"`
+	Model string `json:"model"` // 模型名称
 
 	// Messages is the messages of the chat - can be used to keep a chat memory.
-	Messages []Message `json:"messages"`
+	Messages []Message `json:"messages"` // 消息历史（角色、内容、图像）
 
 	// Stream enables streaming of returned responses; true by default.
 	Stream *bool `json:"stream,omitempty"`
@@ -103,7 +107,7 @@ type ChatRequest struct {
 	KeepAlive *Duration `json:"keep_alive,omitempty"`
 
 	// Tools is an optional list of tools the model has access to.
-	Tools `json:"tools,omitempty"`
+	Tools `json:"tools,omitempty"` // 模型可调用的工具列表
 
 	// Options lists model-specific options.
 	Options map[string]interface{} `json:"options"`
@@ -121,16 +125,18 @@ func (t Tool) String() string {
 	return string(bts)
 }
 
+// 表示单条聊天消息
 // Message is a single message in a chat sequence. The message contains the
 // role ("system", "user", or "assistant"), the content and an optional list
 // of images.
 type Message struct {
-	Role      string      `json:"role"`
-	Content   string      `json:"content"`
-	Images    []ImageData `json:"images,omitempty"`
-	ToolCalls []ToolCall  `json:"tool_calls,omitempty"`
+	Role      string      `json:"role"`                 // 角色（"system", "user", "assistant"）
+	Content   string      `json:"content"`              // 消息内容
+	Images    []ImageData `json:"images,omitempty"`     // 附加图像
+	ToolCalls []ToolCall  `json:"tool_calls,omitempty"` // 模型调用的工具列表
 }
 
+// 反序列化时统一角色为小写
 func (m *Message) UnmarshalJSON(b []byte) error {
 	type Alias Message
 	var a Alias
@@ -197,15 +203,17 @@ type ChatResponse struct {
 	Metrics
 }
 
+// 性能指标
 type Metrics struct {
-	TotalDuration      time.Duration `json:"total_duration,omitempty"`
+	TotalDuration      time.Duration `json:"total_duration,omitempty"` // 总耗时
 	LoadDuration       time.Duration `json:"load_duration,omitempty"`
 	PromptEvalCount    int           `json:"prompt_eval_count,omitempty"`
 	PromptEvalDuration time.Duration `json:"prompt_eval_duration,omitempty"`
-	EvalCount          int           `json:"eval_count,omitempty"`
+	EvalCount          int           `json:"eval_count,omitempty"` // 生成的 token 数
 	EvalDuration       time.Duration `json:"eval_duration,omitempty"`
 }
 
+// 控制模型生成行为的参数
 // Options specified in [GenerateRequest].  If you add a new option here, also
 // add it to the API docs.
 type Options struct {
@@ -213,35 +221,36 @@ type Options struct {
 
 	// Predict options used at runtime
 	NumKeep          int      `json:"num_keep,omitempty"`
-	Seed             int      `json:"seed,omitempty"`
+	Seed             int      `json:"seed,omitempty"` // 随机种子（-1 表示随机）
 	NumPredict       int      `json:"num_predict,omitempty"`
-	TopK             int      `json:"top_k,omitempty"`
-	TopP             float32  `json:"top_p,omitempty"`
+	TopK             int      `json:"top_k,omitempty"` // 采样时保留的最高概率 token 数
+	TopP             float32  `json:"top_p,omitempty"` // 累积概率阈值（nucleus sampling）
 	MinP             float32  `json:"min_p,omitempty"`
 	TypicalP         float32  `json:"typical_p,omitempty"`
 	RepeatLastN      int      `json:"repeat_last_n,omitempty"`
-	Temperature      float32  `json:"temperature,omitempty"`
+	Temperature      float32  `json:"temperature,omitempty"` // 温度（控制随机性）
 	RepeatPenalty    float32  `json:"repeat_penalty,omitempty"`
 	PresencePenalty  float32  `json:"presence_penalty,omitempty"`
 	FrequencyPenalty float32  `json:"frequency_penalty,omitempty"`
 	Mirostat         int      `json:"mirostat,omitempty"`
 	MirostatTau      float32  `json:"mirostat_tau,omitempty"`
 	MirostatEta      float32  `json:"mirostat_eta,omitempty"`
-	Stop             []string `json:"stop,omitempty"`
+	Stop             []string `json:"stop,omitempty"` // 停止生成的 token 列表
 }
 
+// 模型加载时的硬件和内存配置
 // Runner options which must be set when the model is loaded into memory
 type Runner struct {
-	NumCtx    int   `json:"num_ctx,omitempty"`
+	NumCtx    int   `json:"num_ctx,omitempty"` // 上下文长度（token 数）
 	NumBatch  int   `json:"num_batch,omitempty"`
-	NumGPU    int   `json:"num_gpu,omitempty"`
+	NumGPU    int   `json:"num_gpu,omitempty"` // 使用的 GPU 数量
 	MainGPU   int   `json:"main_gpu,omitempty"`
 	LowVRAM   bool  `json:"low_vram,omitempty"`
 	F16KV     bool  `json:"f16_kv,omitempty"` // Deprecated: This option is ignored
 	LogitsAll bool  `json:"logits_all,omitempty"`
 	VocabOnly bool  `json:"vocab_only,omitempty"`
 	UseMMap   *bool `json:"use_mmap,omitempty"`
-	UseMLock  bool  `json:"use_mlock,omitempty"`
+	UseMLock  bool  `json:"use_mlock,omitempty"` // 是否锁定内存（避免交换）
 	NumThread int   `json:"num_thread,omitempty"`
 }
 
@@ -392,9 +401,10 @@ type PushRequest struct {
 	Name string `json:"name"`
 }
 
+// 列出本地所有模型的信息
 // ListResponse is the response from [Client.List].
 type ListResponse struct {
-	Models []ListModelResponse `json:"models"`
+	Models []ListModelResponse `json:"models"` // 模型列表
 }
 
 // ProcessResponse is the response from [Client.Process].
@@ -402,13 +412,14 @@ type ProcessResponse struct {
 	Models []ProcessModelResponse `json:"models"`
 }
 
+// 模型的信息
 // ListModelResponse is a single model description in [ListResponse].
 type ListModelResponse struct {
-	Name       string       `json:"name"`
-	Model      string       `json:"model"`
+	Name       string       `json:"name"`  // 模型名称
+	Model      string       `json:"model"` // 模型名称
 	ModifiedAt time.Time    `json:"modified_at"`
-	Size       int64        `json:"size"`
-	Digest     string       `json:"digest"`
+	Size       int64        `json:"size"`   // 模型文件大小
+	Digest     string       `json:"digest"` // 模型哈希（SHA256）
 	Details    ModelDetails `json:"details,omitempty"`
 }
 
@@ -434,6 +445,7 @@ type TokenResponse struct {
 	Token string `json:"token"`
 }
 
+// 包含模型的生成结果
 // GenerateResponse is the response passed into [GenerateResponseFunc].
 type GenerateResponse struct {
 	// Model is the model name that generated the response.
@@ -443,19 +455,19 @@ type GenerateResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 
 	// Response is the textual response itself.
-	Response string `json:"response"`
+	Response string `json:"response"` // 生成的文本
 
 	// Done specifies if the response is complete.
-	Done bool `json:"done"`
+	Done bool `json:"done"` // 是否生成完成
 
 	// DoneReason is the reason the model stopped generating text.
 	DoneReason string `json:"done_reason,omitempty"`
 
 	// Context is an encoding of the conversation used in this response; this
 	// can be sent in the next request to keep a conversational memory.
-	Context []int `json:"context,omitempty"`
+	Context []int `json:"context,omitempty"` // 新的上下文 token（用于后续请求）
 
-	Metrics
+	Metrics // 耗时和 token 统计
 }
 
 // ModelDetails provides details about a model.
@@ -503,6 +515,7 @@ func (m *Metrics) Summary() {
 	}
 }
 
+// 将 map 类型的参数转换为结构体字段
 func (opts *Options) FromMap(m map[string]interface{}) error {
 	valueOpts := reflect.ValueOf(opts).Elem() // names of the fields in the options struct
 	typeOpts := reflect.TypeOf(opts).Elem()   // types of the fields in the options struct
@@ -515,7 +528,7 @@ func (opts *Options) FromMap(m map[string]interface{}) error {
 			jsonOpts[jsonTag] = field
 		}
 	}
-
+	// 反射遍历字段，根据 JSON 标签匹配键值
 	for key, val := range m {
 		opt, ok := jsonOpts[key]
 		if !ok {
@@ -595,12 +608,13 @@ func (opts *Options) FromMap(m map[string]interface{}) error {
 	return nil
 }
 
+// 提供生成请求的默认参数
 // DefaultOptions is the default set of options for [GenerateRequest]; these
 // values are used unless the user specifies other values explicitly.
 func DefaultOptions() Options {
 	return Options{
 		// options set on request to runner
-		NumPredict: -1,
+		NumPredict: -1, // 无限生成，直到模型停止
 
 		// set a minimal num_keep to avoid issues on context shifts
 		NumKeep:          4,
@@ -619,7 +633,7 @@ func DefaultOptions() Options {
 
 		Runner: Runner{
 			// options set when the model is loaded
-			NumCtx:    int(envconfig.ContextLength()),
+			NumCtx:    int(envconfig.ContextLength()), // 从环境变量获取默认上下文长度
 			NumBatch:  512,
 			NumGPU:    -1, // -1 here indicates that NumGPU should be set dynamically
 			NumThread: 0,  // let the runtime decide
@@ -630,6 +644,7 @@ func DefaultOptions() Options {
 	}
 }
 
+// 自定义 JSON 序列化和反序列化逻辑
 type Duration struct {
 	time.Duration
 }
@@ -657,6 +672,7 @@ func (d *Duration) UnmarshalJSON(b []byte) (err error) {
 			d.Duration = time.Duration(int(t) * int(time.Second))
 		}
 	case string:
+		// 支持字符串（如 "5m"）和数值（如 300 秒）
 		d.Duration, err = time.ParseDuration(t)
 		if err != nil {
 			return err
